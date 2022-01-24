@@ -1,8 +1,9 @@
 version: 0.2
 
-  #env:
-  #variables:
-  #JAVA_HOME: "/usr/lib/jvm/java-8-openjdk-amd64"
+  env:
+    variables:
+      AWS_ACCOUNT_ID: "102595841377"
+      AWS_DEFAULT_REGION: "us-east-2"
   #parameter-store:
 #  LOGIN_PASSWORD: /CodeBuild/dockerLoginPassword
 
@@ -28,7 +29,8 @@ phases:
   pre_build:
     commands:
       - echo login docker registry
-      - docker login -u martinezhenry -p $ACCESS_TOKEN
+      #- docker login -u martinezhenry -p $ACCESS_TOKEN
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
       - echo get variables maven
       - BRANCH_NAME="$BRANCH"
       - mvn resources:resources
