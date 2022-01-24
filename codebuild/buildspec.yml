@@ -1,0 +1,104 @@
+version: 0.2
+
+  #env:
+  #variables:
+  #JAVA_HOME: "/usr/lib/jvm/java-8-openjdk-amd64"
+  #parameter-store:
+#  LOGIN_PASSWORD: /CodeBuild/dockerLoginPassword
+
+batch:
+  fast-fail: true
+  # build-list:
+  # build-matrix:
+  # build-graph:
+
+phases:
+  install:
+    commands:
+      - echo Entered the install phase...
+      #- yum update -y
+      #- wget https://dlcdn.apache.org/maven/maven-3/3.8.4/binaries/apache-maven-3.8.4-bin.tar.gz
+      #- tar xzvf apache-maven-3.8.4-bin.tar.gz
+      #- mv apache-maven-3.8.4 /opt/maven
+      #- export PATH=/opt/apache-maven-3.8.4/bin:$PATH
+      - nohup /usr/local/bin/dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --storage-driver=overlay2&
+      - timeout 15 sh -c "until docker info; do echo .; sleep 1; done"
+    finally:
+      - echo This always runs even if the update or install command fails
+  pre_build:
+    commands:
+      - echo login docker registry
+      - docker login -u martinezhenry -p $ACCESS_TOKEN
+      - echo get variables maven
+      - BRANCH_NAME="$BRANCH"
+      - mvn resources:resources
+      - VERSION=$(cat ./target/classes/project.properties | grep "version" | cut -d'=' -f2)
+      - IMAGE_NAME=$(cat ./target/classes/project.properties | grep "artifactId" | cut -d'=' -f2)
+      - BUILD_ID=$(date +'%y%m%d%H%M%S')
+      - IMAGE_TAG=$(if [ "$BRANCH_NAME" = "develop" ] ; then echo "$VERSION.$BUILD_ID" ; else echo "$VERSION" ; fi)
+    finally:
+      - echo pre-builds commands executed
+      - echo VERSION="$VERSION"
+      - echo IMAGE_TAG="$IMAGE_TAG"
+      - echo BUILD_ID="$BUILD_ID"
+      - echo IMAGE_NAME="$IMAGE_NAME"
+      - echo BRANCH_NAME="$BRANCH_NAME"
+      - echo BRANCH_NAME="$BRANCH"
+  build:
+    on-failure: ABORT
+    commands:
+      - printenv
+      - echo Build started on `date`
+      - mvn test
+      - mvn spotbugs:spotbugs
+      - mvn verify
+      - echo running maven package
+      - mvn package
+      - echo building docker image
+      - docker build -t $IMAGE_NAME:$IMAGE_TAG .
+      - echo creating tag docker
+      - docker tag $IMAGE_NAME:$IMAGE_TAG martinezhenry/$IMAGE_NAME:$IMAGE_TAG
+    finally:
+      - echo build commands executed
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo publishing docker image
+      - docker push martinezhenry/$IMAGE_NAME:$IMAGE_TAG
+
+
+reports:
+  jacoco-report:
+    files:
+      - './target/test-results/jacoco/jacoco.xml'
+    file-format: 'JACOCOXML'
+  sufire-report:
+    files:
+      - './target/test-results/surefire/*.xml'
+    file-format: 'JUNITXML'
+  #arn:aws:codebuild:your-region:your-aws-account-id:report-group/report-group-name-1:
+  #files:
+  #  - "**/*"
+  #base-directory: 'target/tests/reports'
+  #discard-paths: no
+  #reportGroupCucumberJson:
+  #files:
+  #  - 'cucumber/target/cucumber-tests.xml'
+  #discard-paths: yes
+  #file-format: CUCUMBERJSON # default is JUNITXML
+artifacts:
+  files:
+    - target/*.jar
+  discard-paths: yes
+  #secondary-artifacts:
+  #  artifact1:
+  #    files:
+  #      - target/artifact-1.0.jar
+  #    discard-paths: yes
+  #  artifact2:
+  #    files:
+  #      - target/artifact-2.0.jar
+  #    discard-paths: yes
+cache:
+  paths:
+    - '/root/.m2/**/*'
